@@ -413,6 +413,24 @@ void Model::ReadModelFromFile(const char* filename) {
 				faceVector.push_back(newFace);
 
 			}
+			else if(sscanf(buf, "%u", &v) > 0){
+				Face newFace;
+				pointVector[v - 1].nvect.setVect(1,1,1);
+				newFace.pointVector.push_back(pointVector[v - 1]);
+				fscanf(file, "%u", &v);
+				pointVector[v - 1].nvect.setVect(1, 1, 1);
+				newFace.pointVector.push_back(pointVector[v - 1]);
+				fscanf(file, "%u", &v);
+				pointVector[v - 1].nvect.setVect(1, 1, 1);
+				newFace.pointVector.push_back(pointVector[v - 1]);
+				while (fscanf(file, "%u", &v) > 0) {
+					pointVector[v - 1].nvect.setVect(1, 1, 1);
+					newFace.pointVector.push_back(pointVector[v - 1]);
+				}
+				numFaces++;
+				faceVector.push_back(newFace);
+
+			}
 		}
 	}
 }

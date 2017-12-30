@@ -6,8 +6,8 @@
 #include"Transform.h"
 #include"MyMath.h"
 
-#define WINDOW_WIDTH 1600
-#define WINDOW_HEIGHT 1024
+#define WINDOW_WIDTH 800
+#define WINDOW_HEIGHT 600
 #define TEXTURE_MODE 4
 #define COLOR_MODE 2
 #define WINDOWS_CLASS_NAME "DrawElement"
@@ -16,8 +16,8 @@
 
 class ActivateEdge{
 public:
-	double x, dx, ymax;
-	int id;// 属于哪一个面
+	double x, dx;
+	int id, ymax;// 属于哪一个面
 };
 
 
@@ -78,8 +78,6 @@ private:
 	int y_max = 0;
 
 	UINT32 *bmpBuffer_;
-	double *zBuffer_;
-
 };
 
 #endif // !_DRAWELEMENT_H_

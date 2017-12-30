@@ -11,9 +11,7 @@ Scanline::~Scanline() {
 
 
 DrawElement::DrawElement() {
-	zBuffer_ = nullptr;
 	bmpBuffer_ = nullptr;
-	zBuffer_ = nullptr;
 }
 
 DrawElement::~DrawElement() {
@@ -42,7 +40,7 @@ HRESULT DrawElement::initDevice()
 	hwnd = CreateWindowEx(
 		0,
 		WINDOWS_CLASS_NAME,
-		"SoftRendering",
+		"RangeScanLine",
 		WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME ^ WS_MAXIMIZEBOX,
 		CW_USEDEFAULT,
 		CW_USEDEFAULT,
@@ -71,11 +69,6 @@ HRESULT DrawElement::initDevice()
 	bmpInfo.bmiHeader.biClrUsed = 0;
 	bmpInfo.bmiHeader.biClrImportant = 0;
 	hBITMAP = CreateDIBSection(hMemDC, &bmpInfo, DIB_RGB_COLORS, (void**)&bmpBuffer_, NULL, 0);//创建一个可以直接写的buffer
-	zBuffer_ = new double[WINDOW_HEIGHT * WINDOW_WIDTH];
-	int i;
-	for (i = 0; i < WINDOW_HEIGHT * WINDOW_WIDTH; i++) {
-		zBuffer_[i]= -100;
-	}
 
 
 	/*Z Buffer and Texture*/
@@ -93,10 +86,11 @@ HRESULT DrawElement::initDevice()
 
 void DrawElement::clearBuffer() {
 	int i;
+//#pragma omp parallel for
 	for (i = 0; i < WINDOW_HEIGHT * WINDOW_WIDTH; i++) {
 		this->bmpBuffer_[i] = 0x00000000;
-		zBuffer_[i] = -100;
 	}
+//#pragma omp parallel for
 	for (i = 0; i < WINDOW_HEIGHT; i++) {
 		scanlineArray[i].edgeList.clear();
 	}
@@ -106,7 +100,6 @@ void DrawElement::clearBuffer() {
 
 void DrawElement::destoryDevice() {
 	ReleaseDC(hwnd, hMemDC);
-	delete[] zBuffer_;
 	delete[] bmpBuffer_;
 }
 
@@ -197,7 +190,7 @@ int DrawElement::translateFace(Face *in_face, Face *out_face) {
 	vect_normalize(&H, &tempH);
 	double maxdot = max(vect_dotmul(&worldnormalV, &H), 0);
 
-	out_face->r = maxdot;//rand() % (155 + 1) + 100;
+	out_face->r = maxdot;// rand() % (155 + 1) + 100;
 	out_face->g = maxdot;//rand() % (155 + 1) + 100;
 	out_face->b = maxdot;//rand() % (155 + 1) + 100;
 	for (unsigned int i = 0; i < in->size(); ++i) {
@@ -208,10 +201,10 @@ int DrawElement::translateFace(Face *in_face, Face *out_face) {
 		out->push_back(outP);
 	}
 	out_face->nowZ = (*out)[0].pos.z;
-	//out_face->A = worldnormalV.x;
-	//out_face->B = worldnormalV.y;
-	//out_face->C = worldnormalV.z;
-	//out_face->D = -(out_face->A*(*out)[0].pos.x + out_face->B*(*out)[0].pos.y + out_face->C*(*out)[0].pos.z);
+	out_face->A = worldnormalV.x;
+	out_face->B = worldnormalV.y;
+	out_face->C = worldnormalV.z;
+	out_face->D = -(out_face->A*(*out)[0].pos.x + out_face->B*(*out)[0].pos.y + out_face->C*(*out)[0].pos.z);
 
 	return 1;
 }
@@ -235,8 +228,8 @@ void DrawElement::ModelToEdge(Model *in_model) {
 	
 	int point_iter = 0;
 	point maxyP, minyP;
-
-	for (int face_iter = 0; face_iter < in_model->faceVector.size(); face_iter++) {
+	int face_iter;
+	for (face_iter = 0; face_iter < in_model->faceVector.size(); face_iter++) {
 		point_iter = 0;
 		for (; point_iter < in_model->faceVector[face_iter].pointVector.size();point_iter++) {
 			if (point_iter != in_model->faceVector[face_iter].pointVector.size() - 1) {
@@ -262,9 +255,9 @@ void DrawElement::ModelToEdge(Model *in_model) {
 
 			ActivateEdge newActiEdge;
 			newActiEdge.id = face_iter;
-			newActiEdge.x = minyP.pos.x;
-			newActiEdge.ymax = maxyP.pos.y;
-			if ((maxyP.pos.y - minyP.pos.y) != 0) {
+			newActiEdge.x = (int)minyP.pos.x;
+			newActiEdge.ymax = (int)maxyP.pos.y;
+			if (((int)maxyP.pos.y - (int)minyP.pos.y) != 0) {
 				newActiEdge.dx = (maxyP.pos.x - minyP.pos.x) / (maxyP.pos.y - minyP.pos.y);
 				scanlineArray[(int)minyP.pos.y].edgeList.push_back(newActiEdge);
 			}
@@ -303,10 +296,6 @@ void DrawElement::drawScanLine(Model *in_model) {
 			nowEdgeList.splice(++nowEdgeList.begin(), scanlineArray[scanlinePosy].edgeList);
 		}
 
-
-		for (int i = 0; i < in_model->faceVector.size(); i++) {
-			in_model->faceVector[i].in_out_flag = false;
-		}
 		nowFaceList.clear();
 		nowEdgeList.sort(EdgeXcompareRule);
 		nowEdgeIter = nowEdgeList.begin();
@@ -315,9 +304,11 @@ void DrawElement::drawScanLine(Model *in_model) {
 			pointPos = scanlinePosy*WINDOW_WIDTH + scanlinePosx;
 			if ((int)scanlinePosx == (int)(*nowEdgeIter).x) {
 				isDraw = true;
-				for (tempEdgeIter = nowEdgeList.begin(); tempEdgeIter != nowEdgeList.end(); tempEdgeIter++) {
-					if ((*nowEdgeIter).ymax == scanlinePosy && ((*nowEdgeIter).x - (*tempEdgeIter).x)<0.02f && (*tempEdgeIter).ymax!=scanlinePosy&&(*nowEdgeIter).id == (*tempEdgeIter).id) {
-						isDraw = false;
+				if ((int)(*nowEdgeIter).ymax == scanlinePosy) {
+					for (tempEdgeIter = nowEdgeList.begin(); tempEdgeIter != nowEdgeList.end(); tempEdgeIter++) {
+						if ((*nowEdgeIter).id == (*tempEdgeIter).id&&((*nowEdgeIter).x - (*tempEdgeIter).x) < 0.01f && (int)(*tempEdgeIter).ymax != scanlinePosy) {
+							isDraw = false;
+						}
 					}
 				}
 				if (isDraw == true) {
@@ -327,6 +318,15 @@ void DrawElement::drawScanLine(Model *in_model) {
 					//in_model->faceVector[(*nowEdgeIter).id].nowZ = (-in_model->faceVector[(*nowEdgeIter).id].A*scanlinePosx - in_model->faceVector[(*nowEdgeIter).id].B*scanlinePosy - in_model->faceVector[(*nowEdgeIter).id].D) / in_model->faceVector[(*nowEdgeIter).id].C;
 					in_model->faceVector[(*nowEdgeIter).id].id = (*nowEdgeIter).id;
 					nowFaceList.push_back(in_model->faceVector[(*nowEdgeIter).id]);	
+					//double tempz = -1000;
+					//for (nowFaceIter = nowFaceList.begin(); nowFaceIter != nowFaceList.end(); nowFaceIter++) {
+					//	if ((*nowFaceIter).nowZ > tempz) {
+					//		R = (int)((*nowFaceIter).r * 255.0f);
+					//		G = (int)((*nowFaceIter).g * 255.0f);
+					//		B = (int)((*nowFaceIter).b * 255.0f);
+					//		tempz = (*nowFaceIter).nowZ;
+					//	}
+					//}
 					nowFaceList.sort(FaceZcompareRule);
 					R = (int)(nowFaceList.front().r * 255.0f);
 					G = (int)(nowFaceList.front().g * 255.0f);
@@ -335,6 +335,7 @@ void DrawElement::drawScanLine(Model *in_model) {
 				else {
 					for (nowFaceIter = nowFaceList.begin(); nowFaceIter != nowFaceList.end(); ) {
 						if ((*nowFaceIter).id == (*nowEdgeIter).id) {
+							in_model->faceVector[(*nowFaceIter).id].in_out_flag = false;
 							nowFaceIter = nowFaceList.erase(nowFaceIter);
 						}
 						else {
@@ -347,6 +348,15 @@ void DrawElement::drawScanLine(Model *in_model) {
 						B = 0;
 					}
 					else {
+						//double tempz = -1000;
+						//for (nowFaceIter = nowFaceList.begin(); nowFaceIter != nowFaceList.end(); nowFaceIter++) {
+						//	if ((*nowFaceIter).nowZ > tempz) {
+						//		R = (int)((*nowFaceIter).r * 255.0f);
+						//		G = (int)((*nowFaceIter).g * 255.0f);
+						//		B = (int)((*nowFaceIter).b * 255.0f);
+						//		tempz = (*nowFaceIter).nowZ;
+						//	}
+						//}
 						nowFaceList.sort(FaceZcompareRule);
 						R = (int)(nowFaceList.front().r * 255.0f);
 						G = (int)(nowFaceList.front().g * 255.0f);
